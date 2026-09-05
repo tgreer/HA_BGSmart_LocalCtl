@@ -102,8 +102,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "port": port,
     }
 
-    # Discovery updates the stored host when the device announces a new
-    # address; reload so the running client picks it up.
+    # The config flow updates the stored host when a device is rediscovered
+    # (or re-added manually) at a new address, always with
+    # reload_on_update=False. This listener applies the change to the running
+    # client in place. Do not add reloading flow methods alongside it: HA
+    # 2026.6 deprecates that combination (error from 2026.12) because it can
+    # double-reload or race.
     entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

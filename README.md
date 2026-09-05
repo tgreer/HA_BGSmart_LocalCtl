@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="custom_components/bg_smart_local/brand/logo.png" alt="BG Smart Local Control" width="256">
+  <img src="https://raw.githubusercontent.com/tgreer/HA_BGSmart_LocalCtl/main/custom_components/bg_smart_local/brand/logo.png" alt="BG Smart Local Control" width="256">
 </p>
 
 # BG Smart Local Control for Home Assistant

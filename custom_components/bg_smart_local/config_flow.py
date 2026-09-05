@@ -114,8 +114,9 @@ class BGSmartLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
         # Devices are keyed on node_id so a DHCP change just updates the cached
-        # host. The integration's update listener swaps the address in place,
-        # so no reload is needed.
+        # host. The integration's update listener swaps the address in place;
+        # reload_on_update must stay False (HA 2026.6 deprecates reloading
+        # from the flow when an update listener exists).
         await self.async_set_unique_id(node_id)
         self._abort_if_unique_id_configured(
             updates={CONF_HOST: host, CONF_PORT: port},
@@ -203,9 +204,16 @@ class BGSmartLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors["base"] = "not_bg_device"
                 else:
                     # Prefer node_id when supplied; fall back to host so manual
-                    # entries still get a stable identity.
+                    # entries still get a stable identity. If the device is
+                    # already configured, refresh its cached address. Never
+                    # reload from the flow: the integration's update listener
+                    # applies address changes in place (HA 2026.6 deprecates
+                    # combining a listener with reload_on_update=True).
                     await self.async_set_unique_id(node_id or host)
-                    self._abort_if_unique_id_configured()
+                    self._abort_if_unique_id_configured(
+                        updates={CONF_HOST: host, CONF_PORT: port},
+                        reload_on_update=False,
+                    )
 
                     title = _device_display_name(params) or f"BG Smart ({host})"
                     return self.async_create_entry(
