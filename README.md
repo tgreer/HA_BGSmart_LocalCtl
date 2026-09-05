@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="custom_components/bg_smart_local/brand/logo.png" alt="BG Smart Local Control" width="256">
+</p>
+
 # BG Smart Local Control for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
