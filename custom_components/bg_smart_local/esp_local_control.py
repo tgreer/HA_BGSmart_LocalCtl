@@ -11,6 +11,11 @@ import aiohttp
 
 _LOGGER = logging.getLogger(__name__)
 
+
+class ESPLocalControlError(Exception):
+    """Raised when the device cannot be reached or returns an invalid response."""
+
+
 # Lazy import of protobuf to avoid blocking event loop
 _pb = None
 _PROTOBUF_AVAILABLE = None
@@ -44,22 +49,34 @@ async def _get_protobuf(loop):
 class ESPLocalDevice:
     """ESP Local Control Device - Final Implementation."""
     
-    def __init__(self, host: str, port: int, node_id: str, pop: str, security_type: int):
-        """Initialize device."""
+    def __init__(self, host: str, port: int, node_id: str = ""):
+        """Initialize device.
+
+        The device's local control endpoint accepts unauthenticated plaintext
+        requests, so no PoP / session handshake is performed.
+        """
         self.host = host
         self.port = port
         self.node_id = node_id
-        self.pop = pop
-        self.security_type = security_type
         self.base_url = f"http://{host}:{port}"
         self.control_path = "esp_local_ctrl/control"
         self.property_count = -1
         self._params_cache = {}
         
         _LOGGER.info(
-            "Initialized ESPLocalDevice: host=%s, port=%s, security=%s",
-            host, port, security_type
+            "Initialized ESPLocalDevice: host=%s, port=%s, node_id=%s",
+            host, port, node_id or "(unknown)"
         )
+
+    def update_host(self, host: str) -> None:
+        """Point the client at a new address (e.g. after a DHCP change)."""
+        if host == self.host:
+            return
+        _LOGGER.info("Device %s moved from %s to %s", self.node_id or "?", self.host, host)
+        self.host = host
+        self.base_url = f"http://{host}:{self.port}"
+        # Property indices are per-firmware, not per-address, so the cached
+        # count stays valid.
     
     async def _send_protobuf_request(self, message) -> Optional[bytes]:
         """Send protobuf request and get response."""
@@ -269,18 +286,27 @@ class ESPLocalDevice:
             return False
     
     async def get_params(self) -> Dict[str, Any]:
-        """Get current device params."""
+        """Fetch the current device params.
+
+        Raises ESPLocalControlError if the device does not respond or the
+        response has no "params" property, so callers (the coordinator, the
+        config flow) can tell a failure from a genuine empty result.
+        """
         _LOGGER.debug("Getting params")
 
         # Always fetch fresh properties to capture physical changes (e.g. dimmer adjusted manually)
         properties = await self.get_property_values()
 
-        if properties and "params" in properties:
-            self._params_cache = properties["params"]
-            _LOGGER.debug("Updated params from device: %s", self._params_cache)
-        else:
-            _LOGGER.warning("No params found in properties")
+        if not properties:
+            raise ESPLocalControlError(f"No response from {self.host}:{self.port}")
 
+        if "params" not in properties:
+            raise ESPLocalControlError(
+                f"Device at {self.host} returned no 'params' property"
+            )
+
+        self._params_cache = properties["params"]
+        _LOGGER.debug("Updated params from device: %s", self._params_cache)
         return self._params_cache
     
     async def set_param(self, device_name: str, param_name: str, value: Any) -> bool:
