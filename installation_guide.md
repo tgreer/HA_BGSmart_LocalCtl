@@ -2,10 +2,8 @@
 
 ## Prerequisites
 
-Before you start, gather this information:
-
-1. **Device IP Address** - Find in your router's DHCP list
-2. **PoP Key** - Printed on device label (looks like: `AbCd1234`)
+- Your BG Smart device is set up in the BG Smart app and connected to the same network as Home Assistant.
+- Nothing else — devices are discovered automatically and need no keys or IP addresses. You only need the IP if discovery doesn't work in your setup (see manual setup below).
 
 ## Installation Steps
 
@@ -17,7 +15,7 @@ Before you start, gather this information:
 2. Click the **3 dots** (⋮) in the top right
 3. Select **Custom repositories**
 4. Enter:
-   - **Repository**: `https://github.com/rrwood/HA_BGSmart_LocalCtl`
+   - **Repository**: `https://github.com/tgreer/HA_BGSmart_LocalCtl`
    - **Category**: `Integration`
 5. Click **Add**
 
@@ -29,52 +27,35 @@ Before you start, gather this information:
 4. Click **Download**
 5. **Restart Home Assistant**
 
-### 2. Configure the Integration
+### 2. Add Your Devices
 
-#### Find Your Device IP
+#### Automatic (recommended)
 
-**Option A - Router Method:**
-1. Log into your router admin page
-2. Find DHCP client list or connected devices
-3. Look for device named "ESP" or similar
-4. Note the IP address (e.g., `192.168.1.100`)
-
-**Option B - Network Scanner:**
-- Use an app like "Fing" or "Network Scanner"
-- Scan your network
-- Look for ESP devices
-
-**Option C - From BG Smart App:**
-- Some versions show IP in device settings
-
-#### Get PoP Key
-
-The PoP (Proof of Possession) key is required for secure communication:
-
-1. **Check device label** - Usually on back or inside
-2. **Format examples**:
-   - `abcd1234`
-   - `ABCD-1234-EFGH`
-   - 8-16 characters
-3. **Case sensitive** - Enter exactly as shown
-
-#### Add Integration
+After Home Assistant restarts, it listens for BG Smart devices on the network.
 
 1. Go to **Settings** → **Devices & Services**
-2. Click **+ Add Integration** (bottom right)
-3. Search for **"BG Smart Local Control"**
-4. Enter configuration:
+2. Your device appears under **Discovered** with its name from the BG Smart app (e.g., "Utility Room Smart Socket")
+3. Click **Add**, then **Submit** on the confirmation dialog
+
+Repeat for each device. If a device isn't showing, power-cycle it — it announces itself on boot — and give Home Assistant a minute.
+
+#### Manual (if not discovered)
+
+Discovery needs Home Assistant to receive mDNS multicast from the devices. It won't work across VLANs, or in Docker without `--network host`. In that case:
+
+1. Find the device's IP in your router's DHCP client list (look for an "ESP" or "espressif" hostname) or with a scanner app such as Fing
+2. Go to **Settings** → **Devices & Services**
+3. Click **+ Add Integration** (bottom right)
+4. Search for **"BG Smart Local Control"**
+5. Enter configuration:
 
    ```
    Device IP Address: 192.168.1.100    (your device IP)
    Port: 8080                           (pre-filled, don't change)
-   PoP Key: AbCd1234                    (from device label)
-   Node ID: [leave empty]               (not currently used)
+   Node ID: [leave empty]
    ```
 
-> **Note:** The integration does not auto-discover devices on your network. Each dimmer or socket must be added by IP address. Auto-discovery for sockets has not been tested.
-
-5. Click **Submit**
+6. Click **Submit**
 
 ### 3. Verify Installation
 
@@ -114,12 +95,7 @@ If successful, you'll see:
    - Default is 8080
    - Don't change unless you know it's different
 
-3. **Verify PoP key**
-   - Must match device label exactly
-   - Check for typos
-   - Case sensitive
-
-4. **Check network**
+3. **Check network**
    - Device and Home Assistant on same network
    - No VLANs or network isolation
    - Port 8080 not blocked by firewall
@@ -147,7 +123,7 @@ If successful, you'll see:
 ### Getting Help
 
 1. **Check logs** first
-2. **Search existing issues**: https://github.com/rrwood/HA_BGSmart_LocalCtl/issues
+2. **Search existing issues**: https://github.com/tgreer/HA_BGSmart_LocalCtl/issues
 3. **Open new issue** with:
    - Home Assistant version
    - Integration version

@@ -1,8 +1,8 @@
 # BG Smart Local Control for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
-[![GitHub release](https://img.shields.io/github/release/rrwood/HA_BGSmart_LocalCtl.svg)](https://github.com/rrwood/HA_BGSmart_LocalCtl/releases)
-[![License](https://img.shields.io/github/license/rrwood/HA_BGSmart_LocalCtl.svg)](LICENSE)
+[![GitHub release](https://img.shields.io/github/release/tgreer/HA_BGSmart_LocalCtl.svg)](https://github.com/tgreer/HA_BGSmart_LocalCtl/releases)
+[![License](https://img.shields.io/github/license/tgreer/HA_BGSmart_LocalCtl.svg)](LICENSE)
 
 Local control integration for BG Smart (Luceco) dimmer switches and smart sockets using the ESP Local Control protocol.
 
@@ -13,9 +13,9 @@ Local control integration for BG Smart (Luceco) dimmer switches and smart socket
 ✅ **Privacy Friendly** - All communication stays on your local network  
 ✅ **Full Brightness Control** - On/Off and 0-100% dimming  
 ✅ **Smart Socket Support** - Per-outlet power and parental lock on double sockets  
-✅ **Auto Configuration** - Reads device name and capabilities once you supply the IP  
-⚠️ **No Network Auto-Discovery** - Devices must be added by IP address (see [Auto-Discovery](#auto-discovery) below)  
-✅ **Secure** - Uses Sec1 encryption with PoP (Proof of Possession)  
+✅ **Auto-Discovery** - Devices on your network are found automatically via mDNS (see [Auto-Discovery](#auto-discovery))  
+✅ **Auto Configuration** - Device name and capabilities are read from the device; no keys to type  
+⚠️ **No Authentication** - The device's local API accepts unauthenticated commands from the LAN (see [Security](#security))  
 
 ## Supported Devices
 
@@ -35,7 +35,7 @@ Local control integration for BG Smart (Luceco) dimmer switches and smart socket
 
 - Home Assistant 2024.1.0 or newer
 - BG Smart dimmer or smart socket on the same local network
-- PoP (Proof of Possession) key from device label
+- Home Assistant able to receive mDNS multicast for auto-discovery (otherwise add by IP)
 
 ## Installation
 
@@ -44,7 +44,7 @@ Local control integration for BG Smart (Luceco) dimmer switches and smart socket
 1. **Add Custom Repository**
    - Open HACS in Home Assistant
    - Click the 3 dots in top right → **Custom repositories**
-   - Add repository URL: `https://github.com/rrwood/HA_BGSmart_LocalCtl`
+   - Add repository URL: `https://github.com/tgreer/HA_BGSmart_LocalCtl`
    - Category: **Integration**
    - Click **Add**
 
@@ -64,7 +64,7 @@ Local control integration for BG Smart (Luceco) dimmer switches and smart socket
 1. **Download Files**
    ```bash
    cd /config
-   git clone https://github.com/rrwood/HA_BGSmart_LocalCtl.git
+   git clone https://github.com/tgreer/HA_BGSmart_LocalCtl.git
    cp -r HA_BGSmart_LocalCtl/custom_components/bg_smart_local custom_components/
    ```
 
@@ -74,34 +74,31 @@ Local control integration for BG Smart (Luceco) dimmer switches and smart socket
 
 ## Configuration
 
-### Step 1: Find Your Device Information
+### Option A: Auto-Discovery (Recommended)
 
-Before configuring, you need:
-
-1. **Device IP Address**
-   - Check your router's DHCP client list
-   - Or use a network scanner app
-   - Recommended: Set a static IP or DHCP reservation
-
-2. **PoP (Proof of Possession) Key**
-   - Printed on the device label
-   - **Also shown as "Device ID" in BG Smart app** → Device Settings screen
-   - Usually a string of characters/numbers (8-16 characters)
-
-### Step 2: Add Integration
+Once the integration is installed and Home Assistant has restarted, BG Smart devices on your network are discovered automatically.
 
 1. Go to **Settings** → **Devices & Services**
-2. Click **Add Integration**
-3. Search for "BG Smart Local Control"
+2. Look for a **Discovered** card showing your device's name (e.g., "Lounge" or "Utility Room Smart Socket")
+3. Click **Add** and confirm
+
+That's it — no IP addresses or keys to enter. Discovered devices are tracked by their `node_id`, not their IP, so DHCP address changes are handled automatically (see [IP address changes](#ip-address-changes)).
+
+### Option B: Manual Setup
+
+Use this if the device isn't discovered (for example, Home Assistant is on a different VLAN or running in Docker without host networking).
+
+1. Find the device's IP address in your router's DHCP client list or with a network scanner. A static IP or DHCP reservation is recommended.
+2. Go to **Settings** → **Devices & Services**
+3. Click **Add Integration** and search for "BG Smart Local Control"
 4. Enter configuration:
-   - **Device IP Address**: Your dimmer's IP (e.g., `192.168.1.100`)
+   - **Device IP Address**: e.g., `192.168.1.100`
    - **Port**: `8080` (default, pre-filled)
-   - **PoP Key**: From device label (required)
-   - **Node ID**: Leave empty (optional, not currently used)
+   - **Node ID**: Leave empty
 
 5. Click **Submit**
 
-### Step 3: Verify
+### Verify
 
 The integration will:
 - ✅ Connect to your device
@@ -193,12 +190,39 @@ name: Lounge Dimmer
 
 ## Auto-Discovery
 
-This integration does **not** currently discover devices on the network. Every dimmer or socket must be added manually with its IP address (a static IP or DHCP reservation is strongly recommended).
+BG Smart devices advertise themselves on the local network using mDNS with the service type `_esp_local_ctrl._tcp`. Each advertisement carries a `node_id` that uniquely identifies the device, plus the control endpoint path.
 
-- **Dimmers**: Auto-discovery is not implemented. Once you enter the IP, the device name and capabilities are read automatically.
-- **Double sockets**: Auto-discovery is not implemented and has **not been tested**. In a local mDNS scan the socket did not advertise the standard `_esp_local_ctrl._tcp` service that Espressif's ESP Local Control normally publishes, so zeroconf-based discovery may not be possible without further investigation of the firmware.
+The integration listens for this service and:
 
-If you find that your device does advertise itself on the network, please open an issue with the output of a scan (e.g. `dns-sd -B _services._dns-sd._udp` on macOS or `avahi-browse -a` on Linux) so discovery can be looked at.
+- Ignores ESP Local Control devices that don't carry BG Smart markers (any ESP32 project can use the same protocol)
+- Connects to the device and reads its friendly name for the discovery card
+- Uses the `node_id` as the device's identity; the IP address is only a cached hint
+- Upgrades devices that were added manually by IP in earlier versions to the `node_id` identity when they are discovered
+
+### IP address changes
+
+The device's `node_id` doubles as its mDNS hostname (`<node_id>.local`). The integration uses this in two ways so you don't need a static IP or DHCP reservation:
+
+1. **Proactively** — when the device reboots with a new address it re-announces itself, and Home Assistant's discovery updates the cached address in place without reloading the integration.
+2. **Reactively** — if a poll fails, the integration resolves `<node_id>.local` through Home Assistant's mDNS resolver, and if the device has moved, switches to the new address and retries before marking anything unavailable.
+
+Manually added devices get the same behaviour if you fill in the **Node ID** field. The node ID is the device's hostname, visible in your router's DHCP client list (a 22-character string such as `C3GNXiRBoiyPb5p5mGzHtZ`). Manually added devices *without* a node ID are tied to their IP address, so give them a DHCP reservation.
+
+**Tested**: double socket. **Expected to work**: dimmers (same firmware family and protocol), but not yet confirmed on hardware — please report your results.
+
+**Requirements for discovery to work:**
+- Home Assistant must be able to receive multicast traffic from the devices. Home Assistant OS and Supervised installs work out of the box. Docker installs need `--network host`. Devices on a separate VLAN will not be discovered unless an mDNS reflector is configured.
+- If discovery doesn't work in your setup, use [manual setup](#option-b-manual-setup).
+
+To check what your device advertises, run `dns-sd -B _esp_local_ctrl._tcp` on macOS or `avahi-browse -r _esp_local_ctrl._tcp` on Linux.
+
+## Security
+
+The BG Smart devices tested so far accept **unauthenticated, unencrypted** commands on their local control endpoint. The integration sends plain HTTP requests to port 8080 and the device obeys them. Anyone on the same network segment can do the same.
+
+Earlier versions of this integration asked for a PoP (Proof of Possession) key and described the connection as "Sec1 encrypted". That was never true — the key was stored but never sent to the device. The field has been removed.
+
+Espressif's ESP Local Control does support a Sec1 mode (Curve25519 key exchange and AES-CTR encryption keyed with a PoP), and the devices advertise a session endpoint, so BG could enable it in a future firmware. If that happens the integration will need a session handshake implemented; until then, treat the devices as trusting your LAN.
 
 ## Troubleshooting
 
@@ -213,10 +237,11 @@ ping 192.168.1.100  # Replace with your device IP
 - Default port is `8080`
 - Device must be on same network as Home Assistant
 
-**Check PoP Key:**
-- Must match exactly from device label
-- Case-sensitive
-- No spaces
+### Device Not Discovered
+
+- Confirm Home Assistant can receive mDNS multicast (see [Auto-Discovery](#auto-discovery))
+- Power-cycle the device; it re-announces itself on boot
+- Fall back to [manual setup](#option-b-manual-setup) by IP address
 
 ### Device Found But No Control
 
@@ -226,7 +251,6 @@ Settings → System → Logs → Filter "bg_smart"
 ```
 
 **Common Issues:**
-- Wrong PoP key → Re-configure integration
 - Network firewall blocking port 8080
 - Device firmware outdated
 
@@ -255,9 +279,9 @@ Restart and check logs.
 
 - **Base Protocol**: ESP Local Control (Espressif)
 - **Transport**: HTTP POST with Protocol Buffers
-- **Port**: 8080 (HTTPS)
-- **Security**: Sec1 (Curve25519 + AES-256-CTR)
-- **Authentication**: PoP (Proof of Possession) key
+- **Port**: 8080 (plain HTTP)
+- **Discovery**: mDNS `_esp_local_ctrl._tcp` with `node_id` TXT record
+- **Security**: None (protocomm security0) — see [Security](#security)
 
 ### Communication
 
@@ -290,22 +314,19 @@ Home Assistant                    BG Smart Dimmer
 | Internet Required | ❌ No | ✅ Yes |
 | Reliability | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ |
 | Privacy | ✅ All local | ❌ Data to cloud |
-| Setup | IP + PoP | OAuth + Credentials |
+| Setup | Auto-discovered | OAuth + Credentials |
 | Works Offline | ✅ Yes | ❌ No |
 
 ## FAQ
 
-**Q: Where do I find the PoP key?**  
-A: It's printed on a label on the device, usually on the back or inside. It may be labeled as "PoP", "Proof of Possession", or "Security Key".
+**Q: Do I need the PoP key / Device ID from the app?**  
+A: No. Earlier versions asked for it but never used it. Devices are discovered automatically and need no credentials.
 
-**Q: Can I control multiple dimmers?**  
-A: Yes! Add each dimmer as a separate integration with its own IP address.
+**Q: Can I control multiple devices?**  
+A: Yes. Each discovered device appears as its own card; add each one. Manually-added devices are one integration entry per IP address.
 
 **Q: Does this work with BG Smart sockets or other devices?**  
 A: Dimmers and double sockets are supported (power and parental lock per outlet). Socket timers, schedules, and scenes are not yet exposed. Other device types may work but are untested.
-
-**Q: What if I don't have the PoP key?**  
-A: Check the BG Smart mobile app settings - it may display the PoP key. Otherwise, you'll need to contact BG Smart support.
 
 **Q: Does this interfere with the BG Smart app?**  
 A: No, both can be used simultaneously. Changes made in either app or Home Assistant will be reflected in both.
@@ -315,8 +336,8 @@ A: Yes! This integration works completely independently of BG Smart cloud servic
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/rrwood/HA_BGSmart_LocalCtl/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/rrwood/HA_BGSmart_LocalCtl/discussions)
+- **Issues**: [GitHub Issues](https://github.com/tgreer/HA_BGSmart_LocalCtl/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/tgreer/HA_BGSmart_LocalCtl/discussions)
 - **Home Assistant Community**: [Community Thread](https://community.home-assistant.io/)
 
 ## Contributing
@@ -328,6 +349,8 @@ Contributions are welcome! Please:
 
 ## Credits
 
+- Maintained by [@tgreer](https://github.com/tgreer)
+- Original dimmer integration by [@rrwood](https://github.com/rrwood/HA_BGSmart_LocalCtl); this repository is maintained independently
 - Protocol reverse-engineered from BG Smart Android app
 - Based on [ESP Local Control](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/protocols/esp_local_ctrl.html) by Espressif
 
