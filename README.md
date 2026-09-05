@@ -17,8 +17,9 @@ Local control integration for BG Smart (Luceco) dimmer switches and smart socket
 ✅ **Privacy Friendly** - All communication stays on your local network  
 ✅ **Full Brightness Control** - On/Off and 0-100% dimming  
 ✅ **Smart Socket Support** - Per-outlet power and parental lock on double sockets  
+✅ **LED Indicator & Restart** - Turn the status LED off, restart the device from Home Assistant  
 ✅ **Auto-Discovery** - Devices on your network are found automatically via mDNS (see [Auto-Discovery](#auto-discovery))  
-✅ **Auto Configuration** - Device name and capabilities are read from the device; no keys to type  
+✅ **Auto Configuration** - Device name, model, firmware and capabilities are read from the device; no keys or IDs to type  
 ⚠️ **No Authentication** - The device's local API accepts unauthenticated commands from the LAN (see [Security](#security))  
 
 ## Supported Devices
@@ -34,10 +35,13 @@ Local control integration for BG Smart (Luceco) dimmer switches and smart socket
 |--------|----------|
 | Dimmer | One `light` entity with brightness |
 | Double Socket | One device with `switch.<name>_left_socket`, `switch.<name>_right_socket`, and a `... parental lock` switch for each outlet |
+| All devices | `switch.<name>_led_indicator` (status LED, where the device has one) and `button.<name>_restart` |
+
+The device page shows the model (e.g. `822/HC-02`), firmware version and chip, as reported by the device.
 
 ## Requirements
 
-- Home Assistant 2024.1.0 or newer
+- Home Assistant 2024.8.0 or newer
 - BG Smart dimmer or smart socket on the same local network
 - Home Assistant able to receive mDNS multicast for auto-discovery (otherwise add by IP)
 
@@ -92,15 +96,16 @@ That's it — no IP addresses or keys to enter. Discovered devices are tracked b
 
 Use this if the device isn't discovered (for example, Home Assistant is on a different VLAN or running in Docker without host networking).
 
-1. Find the device's IP address in your router's DHCP client list or with a network scanner. A static IP or DHCP reservation is recommended.
+1. Find the device's *current* IP address in your router's DHCP client list or with a network scanner.
 2. Go to **Settings** → **Devices & Services**
 3. Click **Add Integration** and search for "BG Smart Local Control"
 4. Enter configuration:
    - **Device IP Address**: e.g., `192.168.1.100`
    - **Port**: `8080` (default, pre-filled)
-   - **Node ID**: Leave empty
 
 5. Click **Submit**
+
+The integration reads the device's `node_id` from the device itself, so a manually added device is tracked the same way as a discovered one if its IP changes later (see [IP address changes](#ip-address-changes)).
 
 ### Verify
 
@@ -108,6 +113,7 @@ The integration will:
 - ✅ Connect to your device
 - ✅ Read the device name (e.g., "Lounge" or "Utility Room Smart Socket")
 - ✅ Create a light entity for dimmers (e.g., `light.lounge`) or switch entities for sockets
+- ✅ Add an LED indicator switch and a Restart button under the device
 - ✅ Show current on/off state (and brightness for dimmers)
 
 ## Usage
@@ -147,6 +153,24 @@ service: switch.turn_on
 target:
   entity_id: switch.utility_room_smart_socket_right_socket_parental_lock
 ```
+
+#### LED indicator and restart
+
+Every device gets a **Restart** button (under *Diagnostic*). Devices with a status LED also get an **LED indicator** switch (under *Configuration*) — handy for bedroom sockets:
+
+```yaml
+# Turn the socket's status LED off
+service: switch.turn_off
+target:
+  entity_id: switch.utility_room_smart_socket_led_indicator
+
+# Reboot the device (it drops off the network for a few seconds)
+service: button.press
+target:
+  entity_id: button.utility_room_smart_socket_restart
+```
+
+Factory reset and Wi-Fi reset also exist on the device but are deliberately not exposed: a Wi-Fi reset takes the device off your network until it is re-provisioned with the BG Smart app.
 
 ### Automations
 
@@ -210,7 +234,7 @@ The device's `node_id` doubles as its mDNS hostname (`<node_id>.local`). The int
 1. **Proactively** — when the device reboots with a new address it re-announces itself, and Home Assistant's discovery updates the cached address in place without reloading the integration.
 2. **Reactively** — if a poll fails, the integration resolves `<node_id>.local` through Home Assistant's mDNS resolver, and if the device has moved, switches to the new address and retries before marking anything unavailable.
 
-Manually added devices get the same behaviour if you fill in the **Node ID** field. The node ID is the device's hostname, visible in your router's DHCP client list (a 22-character string such as `C3GNXiRBoiyPb5p5mGzHtZ`). Manually added devices *without* a node ID are tied to their IP address, so give them a DHCP reservation.
+Manually added devices get the same behaviour: the device reports its own `node_id` on the first connection and the integration adopts it, so you don't need to look it up or reserve an IP. Entries added by IP in versions before 1.2.0 are upgraded automatically the next time they load. The node ID is shown as the device's serial number on its device page (a 22-character string such as `C3GNXiRBoiyPb5p5mGzHtZ`); it is also the device's hostname in your router's client list.
 
 **Tested**: double socket. **Expected to work**: dimmers (same firmware family and protocol), but not yet confirmed on hardware — please report your results.
 
@@ -330,7 +354,7 @@ A: No. Earlier versions asked for it but never used it. Devices are discovered a
 A: Yes. Each discovered device appears as its own card; add each one. Manually-added devices are one integration entry per IP address.
 
 **Q: Does this work with BG Smart sockets or other devices?**  
-A: Dimmers and double sockets are supported (power and parental lock per outlet). Socket timers, schedules, and scenes are not yet exposed. Other device types may work but are untested.
+A: Dimmers and double sockets are supported (power and parental lock per outlet, LED indicator, restart). Socket countdown/cycle timers, schedules, and scenes are not yet exposed. Other device types may work but are untested.
 
 **Q: Does this interfere with the BG Smart app?**  
 A: No, both can be used simultaneously. Changes made in either app or Home Assistant will be reflected in both.

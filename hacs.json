@@ -1,7 +1,7 @@
 {
   "name": "BG Smart Local Control",
   "render_readme": true,
-  "domains": ["light", "switch"],
+  "domains": ["button", "light", "switch"],
   "iot_class": "Local Polling",
-  "homeassistant": "2024.1.0"
+  "homeassistant": "2024.8.0"
 }

@@ -17,6 +17,7 @@ except ImportError:  # pragma: no cover - older Home Assistant
 
 from .const import DOMAIN
 from .discovery import EXPECTED_CONTROL_ENDPOINT
+from .helpers import device_display_name as _device_display_name
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,27 +29,6 @@ class CannotConnect(Exception):
     """Raised when the device cannot be reached or returns no params."""
 
 
-def _device_display_name(params: dict) -> Optional[str]:
-    """Return a friendly name from the device params, if one is present.
-
-    Sockets expose it as SocketName.Name; dimmers expose it as <key>.Name on
-    the block that also carries Power/brightness.
-    """
-    socket_name = params.get("SocketName")
-    if isinstance(socket_name, dict):
-        name = socket_name.get("Name")
-        if isinstance(name, str) and name.strip():
-            return name.strip()
-
-    for block in params.values():
-        if isinstance(block, dict) and "Power" in block:
-            name = block.get("Name")
-            if isinstance(name, str) and name.strip():
-                return name.strip()
-
-    return None
-
-
 def _looks_like_bg_device(params: dict) -> bool:
     """Return True if the params contain at least one controllable block."""
     return any(
@@ -56,8 +36,12 @@ def _looks_like_bg_device(params: dict) -> bool:
     )
 
 
-async def _fetch_params(host: str, port: int, node_id: str) -> dict:
-    """Connect to the device and return its params, or raise CannotConnect."""
+async def _probe_device(host: str, port: int, node_id: str = "") -> tuple[dict, str]:
+    """Connect to the device and return (params, node_id), or raise CannotConnect.
+
+    The node_id comes from the device's own "config" property when it reports
+    one, so manual setup gets the same stable identity as discovery.
+    """
     # Lazy import to avoid loading protobuf during HA startup.
     from .esp_local_control import ESPLocalControlError, ESPLocalDevice
 
@@ -68,7 +52,7 @@ async def _fetch_params(host: str, port: int, node_id: str) -> dict:
         raise CannotConnect(str(err)) from err
     if not params:
         raise CannotConnect("Device returned empty params")
-    return params
+    return params, device.node_id
 
 
 class BGSmartLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -139,7 +123,7 @@ class BGSmartLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason="already_configured")
 
         try:
-            params = await _fetch_params(host, port, node_id)
+            params, _ = await _probe_device(host, port, node_id)
         except Exception as ex:  # noqa: BLE001
             _LOGGER.debug("Discovered device at %s did not respond: %s", host, ex)
             return self.async_abort(reason="cannot_connect")
@@ -190,11 +174,11 @@ class BGSmartLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             host = user_input[CONF_HOST].strip()
             port = user_input[CONF_PORT]
-            node_id = (user_input.get(CONF_NODE_ID) or "").strip()
+            node_id = ""
 
             params: Optional[dict] = None
             try:
-                params = await _fetch_params(host, port, node_id)
+                params, node_id = await _probe_device(host, port)
             except Exception as ex:  # noqa: BLE001
                 _LOGGER.error("Failed to connect to device at %s:%s: %s", host, port, ex)
                 errors["base"] = "cannot_connect"
@@ -203,9 +187,10 @@ class BGSmartLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if not _looks_like_bg_device(params):
                     errors["base"] = "not_bg_device"
                 else:
-                    # Prefer node_id when supplied; fall back to host so manual
-                    # entries still get a stable identity. If the device is
-                    # already configured, refresh its cached address. Never
+                    # The device reports its own node_id, giving manual entries
+                    # the same stable identity (and IP tracking) as discovered
+                    # ones. Fall back to the host only if it reported none. If
+                    # already configured, refresh the cached address. Never
                     # reload from the flow: the integration's update listener
                     # applies address changes in place (HA 2026.6 deprecates
                     # combining a listener with reload_on_update=True).
@@ -231,7 +216,6 @@ class BGSmartLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         data_schema = vol.Schema({
             vol.Required(CONF_HOST, default=suggested_ip): str,
             vol.Required(CONF_PORT, default=DEFAULT_PORT): int,
-            vol.Optional(CONF_NODE_ID, default=""): str,
         })
 
         return self.async_show_form(

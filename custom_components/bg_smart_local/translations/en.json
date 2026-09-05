@@ -4,16 +4,14 @@
     "step": {
       "user": {
         "title": "BG Smart Local Control",
-        "description": "Connect to a BG Smart device (dimmer or smart socket) on your local network.\n\nDevices are normally discovered automatically. Use this form if yours was not found.",
+        "description": "Connect to a BG Smart device (dimmer or smart socket) on your local network.\n\nDevices are normally discovered automatically. Use this form if yours was not found. The device's identity is read from the device itself, so it will still be tracked if its IP address changes later.",
         "data": {
           "host": "Device IP Address",
-          "port": "Port",
-          "node_id": "Node ID (optional)"
+          "port": "Port"
         },
         "data_description": {
           "host": "IP address of your BG Smart device (e.g., 192.168.1.100)",
-          "port": "Communication port (default: 8080)",
-          "node_id": "Optional. The device's hostname as shown in your router's client list (e.g. C3GNXiRBoiyPb5p5mGzHtZ). If set, the integration follows the device when its IP address changes."
+          "port": "Communication port (default: 8080)"
         }
       },
       "zeroconf_confirm": {

@@ -62,6 +62,9 @@ class ESPLocalDevice:
         self.control_path = "esp_local_ctrl/control"
         self.property_count = -1
         self._params_cache = {}
+        # The "config" property: the RainMaker node schema (node_id, firmware
+        # info, and the type/bounds of every param). Refreshed on each poll.
+        self.config: Dict[str, Any] = {}
         
         _LOGGER.info(
             "Initialized ESPLocalDevice: host=%s, port=%s, node_id=%s",
@@ -77,6 +80,32 @@ class ESPLocalDevice:
         self.base_url = f"http://{host}:{self.port}"
         # Property indices are per-firmware, not per-address, so the cached
         # count stays valid.
+
+    @property
+    def info(self) -> Dict[str, Any]:
+        """Return the device's self-description (model, fw_version, platform...).
+
+        Taken from config["info"]; empty until the first successful poll.
+        """
+        info = self.config.get("info")
+        return info if isinstance(info, dict) else {}
+
+    def _absorb_config(self, config: Any) -> None:
+        """Store the node config and learn the node_id from it if we lack one."""
+        if not isinstance(config, dict):
+            return
+        self.config = config
+        reported = config.get("node_id")
+        if isinstance(reported, str) and reported.strip():
+            reported = reported.strip()
+            if not self.node_id:
+                _LOGGER.info("Device at %s reports node_id %s", self.host, reported)
+                self.node_id = reported
+            elif reported != self.node_id:
+                _LOGGER.warning(
+                    "Device at %s reports node_id %s but entry expects %s",
+                    self.host, reported, self.node_id,
+                )
     
     async def _send_protobuf_request(self, message) -> Optional[bytes]:
         """Send protobuf request and get response."""
@@ -213,6 +242,8 @@ class ESPLocalDevice:
                     
                     if prop_name == "params":
                         self._params_cache = prop_value
+                    elif prop_name == "config":
+                        self._absorb_config(prop_value)
                         
                 except Exception as e:
                     _LOGGER.error("Failed to parse property %s: %s", prop_info.name, e)

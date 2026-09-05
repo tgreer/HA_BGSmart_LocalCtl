@@ -1,4 +1,4 @@
-"""Support for BG Smart Local Control switches (smart sockets)."""
+"""Support for BG Smart Local Control switches (smart sockets, LED indicator)."""
 import logging
 from typing import Any
 
@@ -14,35 +14,13 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .const import DOMAIN
+from .helpers import PARAM_POWER, build_device_info, is_outlet
 
 _LOGGER = logging.getLogger(__name__)
 
-PARAM_POWER = "Power"
-PARAM_BRIGHTNESS = "brightness"
 PARAM_CHILDLOCK = "childlock"
-SOCKET_NAME_KEY = "SocketName"
-
-MANUFACTURER = "BG Electrical"
-MODEL_DOUBLE_SOCKET = "Smart Double Socket"
-
-
-def _is_outlet(device_params: Any) -> bool:
-    """Return True if the params block describes a socket outlet (Power, no brightness)."""
-    return (
-        isinstance(device_params, dict)
-        and PARAM_POWER in device_params
-        and PARAM_BRIGHTNESS not in device_params
-    )
-
-
-def _socket_display_name(params: dict, fallback: str) -> str:
-    """Return the socket's friendly name from SocketName.Name, or a fallback."""
-    socket_name = params.get(SOCKET_NAME_KEY)
-    if isinstance(socket_name, dict):
-        name = socket_name.get("Name")
-        if isinstance(name, str) and name.strip():
-            return name.strip()
-    return fallback
+# Despite the name this is a boolean: the status LED on/off (bg.param.ledindicator).
+PARAM_LED_INDICATOR = "idcbrightness"
 
 
 async def async_setup_entry(
@@ -50,38 +28,26 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up BG Smart socket switches from a config entry."""
+    """Set up BG Smart switches from a config entry."""
     data = hass.data[DOMAIN][entry.entry_id]
     device = data["device"]
     coordinator = data["coordinator"]
-    host = data["host"]
 
     params = coordinator.data
     if not params:
         _LOGGER.debug("No params found in device properties; no switches created")
         return
 
-    outlets = {
-        key: value for key, value in params.items() if _is_outlet(value)
-    }
-    if not outlets:
-        _LOGGER.debug("No socket outlets found in parameters")
-        return
-
-    device_info = DeviceInfo(
-        identifiers={(DOMAIN, entry.entry_id)},
-        name=_socket_display_name(params, f"BG Smart Socket ({host})"),
-        manufacturer=MANUFACTURER,
-        model=MODEL_DOUBLE_SOCKET,
-    )
-
+    device_info = build_device_info(entry, device, params)
     entities: list[SwitchEntity] = []
-    for outlet_key, outlet_params in outlets.items():
+
+    for outlet_key, outlet_params in params.items():
+        if not is_outlet(outlet_params):
+            continue
         _LOGGER.info("Creating power switch for outlet: %s", outlet_key)
         entities.append(
             BGSmartOutletSwitch(coordinator, device, outlet_key, device_info, entry)
         )
-
         if PARAM_CHILDLOCK in outlet_params:
             _LOGGER.info("Creating parental lock switch for outlet: %s", outlet_key)
             entities.append(
@@ -90,12 +56,28 @@ async def async_setup_entry(
                 )
             )
 
+    # The LED indicator lives on a service block (SocketName on sockets), not
+    # on an outlet, so look for it anywhere in the params.
+    for block_key, block in params.items():
+        if isinstance(block, dict) and PARAM_LED_INDICATOR in block:
+            _LOGGER.info("Creating LED indicator switch on block: %s", block_key)
+            entities.append(
+                BGSmartLedIndicatorSwitch(
+                    coordinator, device, block_key, device_info, entry
+                )
+            )
+            break
+
+    if not entities:
+        _LOGGER.debug("No switch-type parameters found")
+        return
+
     _LOGGER.info("Adding %s switch entities", len(entities))
     async_add_entities(entities)
 
 
 class BGSmartParamSwitch(CoordinatorEntity, SwitchEntity):
-    """Base switch bound to a single boolean param on one outlet."""
+    """Base switch bound to a single boolean param on one params block."""
 
     _attr_has_entity_name = True
     _param_name: str
@@ -105,27 +87,27 @@ class BGSmartParamSwitch(CoordinatorEntity, SwitchEntity):
         self,
         coordinator: DataUpdateCoordinator,
         device,
-        outlet_key: str,
+        block_key: str,
         device_info: DeviceInfo,
         entry: ConfigEntry,
     ) -> None:
         """Initialize the switch."""
         super().__init__(coordinator)
         self._device = device
-        self._outlet_key = outlet_key
+        self._block_key = block_key
         self._attr_device_info = device_info
-        self._attr_unique_id = f"{entry.entry_id}_{outlet_key}{self._unique_suffix}"
+        self._attr_unique_id = f"{entry.entry_id}_{block_key}{self._unique_suffix}"
         self._attr_is_on = self._read_state()
 
-    def _outlet_params(self) -> dict:
-        """Return the current params block for this outlet."""
+    def _block_params(self) -> dict:
+        """Return the current params block this switch is bound to."""
         data = self.coordinator.data or {}
-        outlet = data.get(self._outlet_key)
-        return outlet if isinstance(outlet, dict) else {}
+        block = data.get(self._block_key)
+        return block if isinstance(block, dict) else {}
 
     def _read_state(self) -> bool:
         """Read the bound param from the coordinator data."""
-        return bool(self._outlet_params().get(self._param_name, False))
+        return bool(self._block_params().get(self._param_name, False))
 
     @property
     def available(self) -> bool:
@@ -134,23 +116,21 @@ class BGSmartParamSwitch(CoordinatorEntity, SwitchEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        if self._outlet_key in (self.coordinator.data or {}):
+        if self._block_key in (self.coordinator.data or {}):
             self._attr_is_on = self._read_state()
         self.async_write_ha_state()
 
     async def _async_set(self, value: bool) -> None:
         """Write the bound param and update state optimistically."""
-        _LOGGER.debug(
-            "Setting %s.%s = %s", self._outlet_key, self._param_name, value
-        )
+        _LOGGER.debug("Setting %s.%s = %s", self._block_key, self._param_name, value)
         try:
             success = await self._device.set_param(
-                self._outlet_key, self._param_name, value
+                self._block_key, self._param_name, value
             )
         except Exception as ex:  # noqa: BLE001
             _LOGGER.error(
                 "Error setting %s.%s: %s",
-                self._outlet_key,
+                self._block_key,
                 self._param_name,
                 ex,
                 exc_info=True,
@@ -158,7 +138,7 @@ class BGSmartParamSwitch(CoordinatorEntity, SwitchEntity):
             return
 
         if not success:
-            _LOGGER.error("Failed to set %s.%s", self._outlet_key, self._param_name)
+            _LOGGER.error("Failed to set %s.%s", self._block_key, self._param_name)
             return
 
         self._attr_is_on = value
@@ -184,13 +164,13 @@ class BGSmartOutletSwitch(BGSmartParamSwitch):
         self,
         coordinator: DataUpdateCoordinator,
         device,
-        outlet_key: str,
+        block_key: str,
         device_info: DeviceInfo,
         entry: ConfigEntry,
     ) -> None:
         """Initialize the outlet power switch."""
-        super().__init__(coordinator, device, outlet_key, device_info, entry)
-        self._attr_name = outlet_key
+        super().__init__(coordinator, device, block_key, device_info, entry)
+        self._attr_name = block_key
 
 
 class BGSmartParentalLockSwitch(BGSmartParamSwitch):
@@ -210,10 +190,21 @@ class BGSmartParentalLockSwitch(BGSmartParamSwitch):
         self,
         coordinator: DataUpdateCoordinator,
         device,
-        outlet_key: str,
+        block_key: str,
         device_info: DeviceInfo,
         entry: ConfigEntry,
     ) -> None:
         """Initialize the parental lock switch."""
-        super().__init__(coordinator, device, outlet_key, device_info, entry)
-        self._attr_name = f"{outlet_key} parental lock"
+        super().__init__(coordinator, device, block_key, device_info, entry)
+        self._attr_name = f"{block_key} parental lock"
+
+
+class BGSmartLedIndicatorSwitch(BGSmartParamSwitch):
+    """Status LED on/off for the whole device."""
+
+    _param_name = PARAM_LED_INDICATOR
+    _unique_suffix = f"_{PARAM_LED_INDICATOR}"
+    _attr_device_class = SwitchDeviceClass.SWITCH
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:led-on"
+    _attr_name = "LED indicator"

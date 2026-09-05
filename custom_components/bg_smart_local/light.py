@@ -17,11 +17,9 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .const import DOMAIN
+from .helpers import build_device_info, is_dimmer
 
 _LOGGER = logging.getLogger(__name__)
-
-MANUFACTURER = "BG Electrical"
-DEFAULT_MODEL = "Smart Dimmer"
 
 
 async def async_setup_entry(
@@ -45,12 +43,18 @@ async def async_setup_entry(
             _LOGGER.error("No params found in device properties")
             return
         
+        device_info = build_device_info(entry, device, params)
+
         # Filter to only create entities for actual dimmer devices
         entities = []
         for device_name, device_params in params.items():
-            if isinstance(device_params, dict) and "Power" in device_params and "brightness" in device_params:
+            if is_dimmer(device_params):
                 _LOGGER.info("Creating light entity for dimmer: %s", device_name)
-                entities.append(BGSmartDimmer(coordinator, device, device_name, device_params, entry))
+                entities.append(
+                    BGSmartDimmer(
+                        coordinator, device, device_name, device_params, device_info, entry
+                    )
+                )
             else:
                 _LOGGER.debug("Skipping non-dimmer device: %s", device_name)
         
@@ -77,6 +81,7 @@ class BGSmartDimmer(CoordinatorEntity, LightEntity):
         device, 
         device_name: str, 
         device_params: dict, 
+        device_info: DeviceInfo,
         entry: ConfigEntry
     ) -> None:
         """Initialize the dimmer."""
@@ -89,13 +94,7 @@ class BGSmartDimmer(CoordinatorEntity, LightEntity):
         friendly_name = device_params.get("Name", device_name)
         
         self._attr_unique_id = f"{entry.entry_id}_{device_name}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=friendly_name,
-            manufacturer=MANUFACTURER,
-            # The params key (e.g. "DMHCM") is the product code.
-            model=device_name or DEFAULT_MODEL,
-        )
+        self._attr_device_info = device_info
         self._attr_supported_color_modes = {ColorMode.BRIGHTNESS}
         self._attr_color_mode = ColorMode.BRIGHTNESS
         

@@ -16,7 +16,7 @@ from .discovery import async_resolve_host
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.LIGHT, Platform.SWITCH]
+PLATFORMS = [Platform.BUTTON, Platform.LIGHT, Platform.SWITCH]
 SCAN_INTERVAL = timedelta(seconds=30)
 
 CONF_NODE_ID = "node_id"
@@ -61,9 +61,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def _async_relocate() -> bool:
         """Try to find the device at a new address. Returns True if it moved."""
-        if not node_id:
+        # device.node_id may have been learned from the device itself, so use
+        # it rather than the (possibly empty) value stored in the entry.
+        if not device.node_id:
             return False
-        new_host = await async_resolve_host(hass, node_id)
+        new_host = await async_resolve_host(hass, device.node_id)
         if not new_host or new_host == device.host:
             return False
         device.update_host(new_host)
@@ -95,6 +97,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Raises ConfigEntryNotReady (and schedules a retry) if the device is unreachable.
     await coordinator.async_config_entry_first_refresh()
 
+    if not node_id and device.node_id:
+        _async_adopt_node_id(hass, entry, device.node_id)
+
     hass.data[DOMAIN][entry.entry_id] = {
         "device": device,
         "coordinator": coordinator,
@@ -112,6 +117,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+def _async_adopt_node_id(hass: HomeAssistant, entry: ConfigEntry, node_id: str) -> None:
+    """Upgrade a host-keyed entry to the node_id the device reported.
+
+    Entries added manually before the device started telling us its node_id
+    are keyed on the IP address. Re-keying them enables mDNS IP tracking and
+    lets discovery recognise the device instead of offering it again.
+    """
+    for other in hass.config_entries.async_entries(DOMAIN):
+        if other.entry_id != entry.entry_id and other.unique_id == node_id:
+            _LOGGER.warning(
+                "Not adopting node_id %s for entry %s: already used by entry %s",
+                node_id, entry.title, other.title,
+            )
+            return
+
+    _LOGGER.info("Entry %s: adopting device-reported node_id %s", entry.title, node_id)
+    updates: dict[str, Any] = {"data": {**entry.data, CONF_NODE_ID: node_id}}
+    if entry.unique_id != node_id:
+        updates["unique_id"] = node_id
+    # Called before the update listener is registered, and the host is
+    # unchanged anyway. No reload is involved.
+    hass.config_entries.async_update_entry(entry, **updates)
 
 
 async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:

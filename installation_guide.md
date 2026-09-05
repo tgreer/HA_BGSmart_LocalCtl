@@ -52,10 +52,11 @@ Discovery needs Home Assistant to receive mDNS multicast from the devices. It wo
    ```
    Device IP Address: 192.168.1.100    (your device IP)
    Port: 8080                           (pre-filled, don't change)
-   Node ID: [leave empty]
    ```
 
 6. Click **Submit**
+
+The device's identity (`node_id`) is read from the device itself, so a manually added device still follows IP address changes — no static IP needed.
 
 ### 3. Verify Installation
 
@@ -64,6 +65,7 @@ If successful, you'll see:
 - ✅ Device card showing device name (e.g., "Lounge" or "Utility Room Smart Socket")
 - ✅ Light entity created for dimmers (e.g., `light.lounge`)
 - ✅ Switch entities created for sockets (power and parental lock per outlet)
+- ✅ An **LED indicator** switch (Configuration) and a **Restart** button (Diagnostic) on the device page
 
 ### 4. Test Control
 
