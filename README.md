@@ -360,7 +360,9 @@ Contributions are welcome! Please:
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) file for details
+MIT License - See [LICENSE](LICENSE) file for details.
+
+Copyright (c) 2025 rrwood (original dimmer integration) and (c) 2026 tgreer.
 
 ## Disclaimer
 
