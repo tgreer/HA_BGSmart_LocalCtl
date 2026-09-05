@@ -16,7 +16,7 @@ from .discovery import async_resolve_host
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.BUTTON, Platform.LIGHT, Platform.SWITCH]
+PLATFORMS = [Platform.BUTTON, Platform.LIGHT, Platform.SWITCH, Platform.TEXT]
 SCAN_INTERVAL = timedelta(seconds=30)
 
 CONF_NODE_ID = "node_id"

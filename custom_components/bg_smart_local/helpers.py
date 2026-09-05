@@ -15,24 +15,34 @@ PARAM_BRIGHTNESS = "brightness"
 SOCKET_NAME_KEY = "SocketName"
 
 
-def device_display_name(params: dict) -> Optional[str]:
-    """Return the friendly name the user gave the device in the BG Smart app.
+PARAM_NAME = "Name"
 
-    Sockets expose it as SocketName.Name; dimmers expose it as <key>.Name on
-    the block that also carries Power/brightness.
+
+def device_name_block(params: dict) -> Optional[str]:
+    """Return the key of the params block that carries the device's Name.
+
+    Sockets keep it on the SocketName service; dimmers keep it on the block
+    that also carries Power/brightness. None if the device has no Name param.
     """
     socket_name = params.get(SOCKET_NAME_KEY)
-    if isinstance(socket_name, dict):
-        name = socket_name.get("Name")
-        if isinstance(name, str) and name.strip():
-            return name.strip()
+    if isinstance(socket_name, dict) and PARAM_NAME in socket_name:
+        return SOCKET_NAME_KEY
 
-    for block in params.values():
-        if isinstance(block, dict) and PARAM_POWER in block:
-            name = block.get("Name")
-            if isinstance(name, str) and name.strip():
-                return name.strip()
+    for key, block in params.items():
+        if isinstance(block, dict) and PARAM_POWER in block and PARAM_NAME in block:
+            return key
 
+    return None
+
+
+def device_display_name(params: dict) -> Optional[str]:
+    """Return the friendly name the user gave the device in the BG Smart app."""
+    key = device_name_block(params)
+    if key is None:
+        return None
+    name = params[key].get(PARAM_NAME)
+    if isinstance(name, str) and name.strip():
+        return name.strip()
     return None
 
 

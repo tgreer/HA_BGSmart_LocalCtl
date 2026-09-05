@@ -65,7 +65,7 @@ If successful, you'll see:
 - ✅ Device card showing device name (e.g., "Lounge" or "Utility Room Smart Socket")
 - ✅ Light entity created for dimmers (e.g., `light.lounge`)
 - ✅ Switch entities created for sockets (power and parental lock per outlet)
-- ✅ An **LED indicator** switch (Configuration) and a **Restart** button (Diagnostic) on the device page
+- ✅ **Name**, **Time zone**, **Sync time zone** and **LED indicator** controls (Configuration) and a **Restart** button (Diagnostic) on the device page
 
 ### 4. Test Control
 

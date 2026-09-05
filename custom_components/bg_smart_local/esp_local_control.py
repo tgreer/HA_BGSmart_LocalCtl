@@ -366,3 +366,11 @@ class ESPLocalDevice:
         }
         
         return await self.set_property_values(params)
+
+    async def set_block_params(self, device_name: str, values: Dict[str, Any]) -> bool:
+        """Set several parameters on one block in a single request.
+
+        Used where params must change together, e.g. Time.TZ and Time.TZ-POSIX.
+        """
+        _LOGGER.debug("Setting params on %s: %s", device_name, values)
+        return await self.set_property_values({device_name: dict(values)})

@@ -17,7 +17,7 @@ Local control integration for BG Smart (Luceco) dimmer switches and smart socket
 ✅ **Privacy Friendly** - All communication stays on your local network  
 ✅ **Full Brightness Control** - On/Off and 0-100% dimming  
 ✅ **Smart Socket Support** - Per-outlet power and parental lock on double sockets  
-✅ **LED Indicator & Restart** - Turn the status LED off, restart the device from Home Assistant  
+✅ **Device Settings** - Rename the device, set its time zone, turn the status LED off, restart it — all from Home Assistant  
 ✅ **Auto-Discovery** - Devices on your network are found automatically via mDNS (see [Auto-Discovery](#auto-discovery))  
 ✅ **Auto Configuration** - Device name, model, firmware and capabilities are read from the device; no keys or IDs to type  
 ⚠️ **No Authentication** - The device's local API accepts unauthenticated commands from the LAN (see [Security](#security))  
@@ -35,7 +35,7 @@ Local control integration for BG Smart (Luceco) dimmer switches and smart socket
 |--------|----------|
 | Dimmer | One `light` entity with brightness |
 | Double Socket | One device with `switch.<name>_left_socket`, `switch.<name>_right_socket`, and a `... parental lock` switch for each outlet |
-| All devices | `switch.<name>_led_indicator` (status LED, where the device has one) and `button.<name>_restart` |
+| All devices | `switch.<name>_led_indicator` (status LED, where the device has one), `text.<name>_name` (rename the device), `text.<name>_time_zone` and `button.<name>_sync_time_zone`, `button.<name>_restart` |
 
 The device page shows the model (e.g. `822/HC-02`), firmware version and chip, as reported by the device.
 
@@ -113,7 +113,7 @@ The integration will:
 - ✅ Connect to your device
 - ✅ Read the device name (e.g., "Lounge" or "Utility Room Smart Socket")
 - ✅ Create a light entity for dimmers (e.g., `light.lounge`) or switch entities for sockets
-- ✅ Add an LED indicator switch and a Restart button under the device
+- ✅ Add Name, Time zone, LED indicator, Sync time zone and Restart controls under the device
 - ✅ Show current on/off state (and brightness for dimmers)
 
 ## Usage
@@ -171,6 +171,32 @@ target:
 ```
 
 Factory reset and Wi-Fi reset also exist on the device but are deliberately not exposed: a Wi-Fi reset takes the device off your network until it is re-provisioned with the BG Smart app.
+
+#### Name and time zone
+
+Under *Configuration* on the device page:
+
+- **Name** — the device's name as shown in the BG Smart app. Changing it renames the device on the hardware, and Home Assistant's device name and integration entry follow. (If you have renamed the device *in Home Assistant*, that HA-side name is kept; only the device-provided name changes.)
+- **Time zone** — the device's IANA time zone, e.g. `Europe/London`. The device uses this for its own schedules and timers. The matching POSIX rule (`TZ-POSIX`) is derived automatically and written at the same time.
+- **Sync time zone** — a button that sets the device's time zone to Home Assistant's configured time zone in one click. Handy after a factory reset, or if the app set it wrongly.
+
+```yaml
+# Point every BG device at HA's time zone
+service: button.press
+target:
+  entity_id:
+    - button.utility_room_smart_socket_sync_time_zone
+    - button.lounge_sync_time_zone
+
+# Set an explicit zone
+service: text.set_value
+target:
+  entity_id: text.utility_room_smart_socket_time_zone
+data:
+  value: "Europe/Dublin"
+```
+
+Checking for firmware updates is *not* available locally: the app's "check for update" goes through BG's cloud, which pushes updates to the device. The device exposes no update-related parameter.
 
 ### Automations
 
@@ -354,7 +380,7 @@ A: No. Earlier versions asked for it but never used it. Devices are discovered a
 A: Yes. Each discovered device appears as its own card; add each one. Manually-added devices are one integration entry per IP address.
 
 **Q: Does this work with BG Smart sockets or other devices?**  
-A: Dimmers and double sockets are supported (power and parental lock per outlet, LED indicator, restart). Socket countdown/cycle timers, schedules, and scenes are not yet exposed. Other device types may work but are untested.
+A: Dimmers and double sockets are supported (power and parental lock per outlet, LED indicator, rename, time zone, restart). Socket countdown/cycle timers, schedules, and scenes are not yet exposed; firmware update checks are cloud-only. Other device types may work but are untested.
 
 **Q: Does this interfere with the BG Smart app?**  
 A: No, both can be used simultaneously. Changes made in either app or Home Assistant will be reflected in both.
